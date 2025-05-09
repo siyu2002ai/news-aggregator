@@ -2,6 +2,25 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+
+cd my-news-digest
+npm run dev
+
+
+
+结构
+NEWS_DIGEST/                 <-- 你在 VS Code 中打开的可能是这个文件夹
+├── my-news-digest/          <-- 你的 Next.js 项目
+│   ├── src/
+│   ├── package.json         (属于 my-news-digest)
+│   ├── tailwind.config.ts   (属于 my-news-digest)
+│   ├── postcss.config.mjs   (属于 my-news-digest)
+│   └── ...其他文件
+
+
+
+
+
 First, run the development server:
 
 ```bash
@@ -34,3 +53,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+
+

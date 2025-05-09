@@ -1,102 +1,90 @@
-import Image from "next/image";
+
+"use client";
+
+import { useState, useEffect, useCallback } from 'react';
+import AppHeader from '@/components/AppHeader';
+import NewsFeed from '@/components/NewsFeed';
+import SourceFilter from '@/components/SourceFilter';
+// import type { NewsItem } from '@/services/news-aggregation';
+import { getNews } from '@/services/news-aggregation';
+import { useToast } from "@/hooks/use-toast";
+import type { NewsItem } from '@/types'; 
+// const ALL_SOURCES = ['Reddit', 'YouTube', 'NYT', 'WSJ', 'RHG', 'S&P Global'];
+const ALL_SOURCES = ['RHG',]; // 待会删
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [allNews, setAllNews] = useState<NewsItem[]>([]);
+  const [filteredNews, setFilteredNews] = useState<NewsItem[]>([]);
+  const [selectedSources, setSelectedSources] = useState<string[]>(ALL_SOURCES);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+  const fetchAllNews = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const newsPromises = ALL_SOURCES.map(source => getNews(source));
+      const results = await Promise.allSettled(newsPromises);
+      
+      let fetchedItems: NewsItem[] = [];
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          fetchedItems = fetchedItems.concat(result.value);
+        } else {
+          console.error(`Failed to fetch news from ${ALL_SOURCES[index]}:`, result.reason);
+          toast({
+            title: "Error Fetching News",
+            description: `Could not load news from ${ALL_SOURCES[index]}. Please try again later.`,
+            variant: "destructive",
+          });
+        }
+      });
+      
+      // Sort by publishedDate in descending order (newest first)
+      fetchedItems.sort((a, b) => new Date(b.publishedDate).getTime() - new Date(a.publishedDate).getTime());
+      setAllNews(fetchedItems);
+
+    } catch (error) {
+      console.error("Error fetching news:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch news. Please check your connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchAllNews();
+  }, [fetchAllNews]);
+
+  useEffect(() => {
+    const filtered = allNews.filter(item => selectedSources.includes(item.source));
+    setFilteredNews(filtered);
+  }, [allNews, selectedSources]);
+
+  const handleSourceToggle = (source: string) => {
+    setSelectedSources(prev =>
+      prev.includes(source)
+        ? prev.filter(s => s !== source)
+        : [...prev, source]
+    );
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background">
+      <AppHeader />
+      <main className="container mx-auto px-4 py-8 flex-grow">
+        <SourceFilter
+          sources={ALL_SOURCES}
+          selectedSources={selectedSources}
+          onSourceToggle={handleSourceToggle}
+        />
+        <NewsFeed newsItems={filteredNews} isLoading={isLoading} />
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+      <footer className="text-center py-4 text-muted-foreground text-sm border-t">
+        <p>&copy; {new Date().getFullYear()} News Digest Hub. All rights reserved.</p>
       </footer>
     </div>
   );
