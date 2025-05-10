@@ -1,82 +1,190 @@
-// src/app/api/news/route.ts
+// src/app/api/news/route.ts  <-- 确保路径是这个，如果你的 app 目录在 src 下
+
+
 import { NextRequest, NextResponse } from 'next/server';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+// 确保 NewsItem 的导入路径正确
+// 选项1: 如果 NewsItem 定义在 @/types/index.ts (或类似文件)
 import type { NewsItem } from '@/types';
+// 选项2: 如果 NewsItem 定义在并导出自 @/lib/services/news-aggregation.ts
+// import type { NewsItem } from '@/lib/services/news-aggregation';
 
-// --- Mock Data Store ---
-const MOCK_NEWS_DATA: { [key: string]: NewsItem[] } = {
-  RHG: [
+
+// --- RHG Specific Scraper ---
+async function fetchRhgNews(): Promise<NewsItem[]> {
+  const url = 'https://rhg.com/china/research/';
+  console.log(`RHG API: Attempting to fetch from ${url}`);
+
+  try {
+    const { data: html } = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    console.log(`RHG API: Successfully fetched HTML (length: ${html.length})`);
+
+    const $ = cheerio.load(html);
+    const items: NewsItem[] = [];
+
+    const researchItems = $('article.c-card.c-card--publication');
+    console.log(`RHG API: Found ${researchItems.length} potential research items using selector 'article.c-card.c-card--publication'`);
+
+    researchItems.each((index, element) => {
+      const articleElement = $(element);
+
+      const titleLinkElement = articleElement.find('h3.c-card__title a.c-card__link');
+      let title = titleLinkElement.text().trim();
+      let link = titleLinkElement.attr('href');
+
+      const summaryText = articleElement.find('p.c-card__description').text().trim();
+
+      const timeElement = articleElement.find('time.c-card__date');
+      let dateText = timeElement.attr('datetime');
+      if (!dateText) {
+          dateText = timeElement.text().trim();
+      }
+
+      const imageTag = articleElement.find('div.c-card_image-wrapper picture.o-media__picture img');
+      let rawSrcset = imageTag.attr('srcset');
+      let parsedImageUrl: string | undefined = undefined;
+
+      if (rawSrcset) {
+        parsedImageUrl = rawSrcset.split(',')[0].trim().split(' ')[0];
+      }
+      if (!parsedImageUrl) {
+        parsedImageUrl = imageTag.attr('src');
+      }
+
+      // --- Detailed Logging BEFORE creating NewsItem ---
+      console.log(`RHG API Item ${index} PRE-PUSH ---`);
+      console.log(`  Raw Title: "${title}"`);
+      console.log(`  Raw Link: "${link}"`);
+      console.log(`  Raw Summary Text: "${summaryText}"`);
+      console.log(`  Raw Date Text: "${dateText}"`);
+      console.log(`  Raw Srcset Attr: "${rawSrcset}"`);
+      console.log(`  Parsed Image URL: "${parsedImageUrl}"`);
+      // --- End Detailed Logging ---
+
+      if (title && link) {
+        if (link && !link.startsWith('http')) {
+          const baseDomain = new URL(url).origin;
+          link = new URL(link, baseDomain).href;
+        }
+
+        let publishedDate = new Date().toISOString();
+        if (dateText) {
+          try {
+            const parsed = new Date(dateText);
+            if (!isNaN(parsed.getTime())) {
+              publishedDate = parsed.toISOString();
+            } else {
+              console.warn(`RHG API: Could not parse date: "${dateText}" for item: ${title}. Using fallback.`);
+            }
+          } catch (e) {
+            console.warn(`RHG API: Error parsing date: "${dateText}" for item: ${title}. Using fallback.`, e);
+          }
+        } else {
+            console.warn(`RHG API: Date text not found for item: ${title}. Using fallback.`);
+        }
+
+        let finalImageUrl: string | undefined = undefined;
+        if (parsedImageUrl) {
+          if (!parsedImageUrl.startsWith('http')) {
+              const baseDomain = new URL(url).origin;
+              finalImageUrl = new URL(parsedImageUrl, baseDomain).href;
+          } else {
+              finalImageUrl = parsedImageUrl;
+          }
+        }
+
+        const newsItem: NewsItem = {
+          id: link,
+          title,
+          link,
+          source: 'RHG',
+          publishedDate,
+          summary: summaryText || undefined,
+          imageUrl: finalImageUrl || undefined,
+        };
+        // console.log(`RHG API Item ${index} PUSHING OBJECT:`, JSON.stringify(newsItem, null, 2));
+        console.log(`  Final NewsItem imageUrl: "${newsItem.imageUrl}"`);//改了
+        // console.log(`RHG API Item ${index} PUSHING OBJECT:`, JSON.stringify(newsItem, null, 2)); // 可选，但上面的更直接
+        // ====================================================================
+        items.push(newsItem);
+      } else {
+        console.warn(`RHG API: Skipping item at index ${index} due to missing title or link.`);
+      }
+    });
+
+    console.log(`RHG API: Successfully parsed ${items.length} news items.`);
+    return items;
+  } catch (error: any) {
+    console.error('RHG API fetchRhgNews FUNCTION ERROR:', error.message);
+    console.error('RHG API fetchRhgNews FUNCTION STACK:', error.stack);
+    if (axios.isAxiosError(error)) {
+        throw new Error(`RHG Axios request failed: ${error.message}`);
+    }
+    throw new Error(`Problem in fetchRhgNews for RHG: ${error.message}`);
+  }
+}
+
+// --- Mock/Placeholder for other sources ---
+async function fetchOtherSourceNews(sourceName: string): Promise<NewsItem[]> {
+  console.log(`API Route: Fetching mock/empty data for ${sourceName}`);
+  // Return an empty array to prevent errors for now
+  return [];
+  // Or you can return some mock data:
+  /*
+  return [
     {
-      id: 'rhg-mock-1',
-      title: 'RHG Mock: The Future of China Trade (Mock Data)',
-      link: 'https://rhg.com/mock/future-china-trade',
-      source: 'RHG',
-      publishedDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-      summary: 'This is a mock summary for an RHG article. Content focuses on trade policies.',
-      imageUrl: 'https://picsum.photos/seed/rhg_article_1/400/250',
-    },
-    // ... more RHG mock data ...
-  ],
-  // ... mock data for other sources ...
-  NYT: [],
-  WSJ: [],
-  'S&P GLOBAL': [],
-};
+      id: `${sourceName.toLowerCase()}-mock-1`,
+      title: `Mock News from ${sourceName}`,
+      link: '#',
+      source: sourceName,
+      publishedDate: new Date().toISOString(),
+      summary: `This is a mock summary from ${sourceName}.`,
+      imageUrl: 'https://via.placeholder.com/150'
+    }
+  ];
+  */
+}
 
-const MOCK_ENABLED = true; // Set to false if you ever upgrade and want to use real scrapers
 
-// ======================================================================================
-// MAKE SURE THERE IS ONLY ONE 'export async function GET(...)' IN THIS ENTIRE FILE
-// ======================================================================================
 export async function GET(request: NextRequest) {
-  console.log("--- API /api/news CALLED (Firebase Spark Plan Mode - Mock Data with Images) ---");
-
+  console.log("--- API /api/news CALLED (Local Dev) ---");
   const searchParams = request.nextUrl.searchParams;
   const source = searchParams.get('source');
-  console.log(`--- Source parameter: ${source} (Firebase Spark Plan Mode) ---`);
+  console.log(`--- API Source parameter: ${source} (Local Dev) ---`);
 
   if (!source) {
     return NextResponse.json({ message: 'Source parameter is required' }, { status: 400 });
   }
 
-  if (MOCK_ENABLED) {
-    console.log(`--- MOCK_ENABLED is true, returning mock data for ${source} ---`);
-    const sourceKey = source.toUpperCase();
-    const mockDataForSource = MOCK_NEWS_DATA[sourceKey] || MOCK_NEWS_DATA[source];
-
-    if (mockDataForSource) {
-      console.log(`--- Mock data for ${source}:`, JSON.stringify(mockDataForSource, null, 2));
-      return NextResponse.json(mockDataForSource);
-    } else {
-      console.warn(`--- No mock data defined for source: ${source}. Returning empty array. ---`);
-      return NextResponse.json([]);
-    }
-  }
-
-  // --- Code for REAL scraping (for Blaze plan, currently inactive due to MOCK_ENABLED=true) ---
-  console.log(`--- MOCK_ENABLED is false. Attempting real fetch for ${source} (Requires Blaze Plan) ---`);
   try {
-    const newsItems: NewsItem[] = [];
-
-    console.warn("Real fetching logic is currently bypassed because MOCK_ENABLED is true.");
-    return NextResponse.json(newsItems); // Return empty or placeholder if real fetching bypassed
-  } catch (error: unknown) { // <--- 修改为 unknown
-    let errorMessage = "An unknown error occurred during real fetch attempt";
-    let errorStack: string | undefined = undefined;
-
-    if (error instanceof Error) {
-      errorMessage = error.message;
-      errorStack = error.stack;
-      console.error(`API ROUTE HANDLER ERROR (Real Fetch Attempt) for source [${source}]:`, errorMessage);
-      if (errorStack) {
-        console.error(`API ROUTE HANDLER STACK (Real Fetch Attempt) for source [${source}]:`, errorStack);
-      }
-    } else {
-      // 如果抛出的不是 Error 对象实例，记录原始错误信息
-      console.error(`API ROUTE HANDLER ERROR (Real Fetch Attempt) - Non-Error object thrown for source [${source}]:`, error);
-      // 你也可以选择将 error 序列化为字符串作为 errorMessage 的一部分
-      // if (typeof error === 'string') errorMessage = error;
-      // else if (typeof error === 'object' && error !== null) errorMessage = JSON.stringify(error);
+    let newsItems: NewsItem[] = [];
+    switch (source.toUpperCase()) {
+      case 'RHG':
+        console.log("API Route: Routing to fetchRhgNews (Local Dev)");
+        newsItems = await fetchRhgNews();
+        break;
+      // For other sources, you can call a mock function or implement their scrapers
+      case 'REDDIT':
+      case 'YOUTUBE':
+      case 'NYT':
+      case 'WSJ':
+      case 'S&P GLOBAL': // Assuming 'S&P Global' is the exact string from ALL_SOURCES
+        newsItems = await fetchOtherSourceNews(source);
+        break;
+      default:
+        console.warn(`API Route: Source '${source}' is not supported. Returning empty array. (Local Dev)`);
+        newsItems = []; // Return empty for unsupported rather than erroring immediately
+        // return NextResponse.json({ message: `Source '${source}' is not supported.` }, { status: 400 });
     }
-    return NextResponse.json({ message: `Failed to fetch news for ${source} (real fetch attempt): ${errorMessage}` }, { status: 500 });
+    return NextResponse.json(newsItems);
+  } catch (error: any) {
+    console.error(`API ROUTE HANDLER ERROR for source [${source}] (Local Dev):`, error.message);
+    console.error(`API ROUTE HANDLER STACK for source [${source}] (Local Dev):`, error.stack);
+    return NextResponse.json({ message: `Failed to fetch news for ${source}: ${error.message || 'Unknown server error'}` }, { status: 500 });
   }
 }
