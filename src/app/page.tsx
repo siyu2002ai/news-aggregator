@@ -10,9 +10,9 @@ import { getNews } from '@/services/news-aggregation';
 import { useToast } from "@/hooks/use-toast";
 import type { NewsItem } from '@/types'; 
 // const ALL_SOURCES = ['Reddit', 'YouTube', 'NYT', 'WSJ', 'RHG', 'S&P Global'];
-// const ALL_SOURCES = ['RHG','McKinsey',]; // 待会删
+const ALL_SOURCES = ['RHG','McKinsey',]; // 待会删
 
-const ALL_SOURCES = ['S&P',]; // 待会删，调试专用
+// const ALL_SOURCES = ['S&P',]; // 待会删，调试专用
 
 export default function Home() {
   const [allNews, setAllNews] = useState<NewsItem[]>([]);

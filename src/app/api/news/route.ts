@@ -405,138 +405,132 @@ async function fetchMckinseyNews(): Promise<NewsItem[]> {
 
 //gs
 // src/app/api/news/route.ts
-// 确保文件顶部有必要的 import 语句:
-// import { NextRequest, NextResponse } from 'next/server';
-// import axios from 'axios';
-// import * as cheerio from 'cheerio';
-// import type { NewsItem } from '@/types';
-// import { URL } from 'url';
+// ... (imports) ...
 
-// async function fetchGoldmanSachsNews(): Promise<NewsItem[]> {
-//   const url = 'https://www.goldmansachs.com/insights/articles/';
-//   const baseInsightsUrl = 'https://www.goldmansachs.com/insights/articles/'; // 用于拼接 slug
-//   console.log(`Goldman Sachs API: Attempting to fetch from ${url}`);
+async function fetchUbsNews(): Promise<NewsItem[]> {
+  const url = 'https://www.ubs.com/global/en/wealthmanagement/insights/house-view.html';
+  const baseDomain = new URL(url).origin;
+  console.log(`UBS API: Attempting to fetch from ${url} via HTML scraping`); // 标明方式
 
-//   try {
-//     const { data: html } = await axios.get(url, { /* headers */ });
-//     console.log(`Goldman Sachs API: Successfully fetched HTML (length: ${html.length})`);
-//   // !!! 调试：打印或保存获取到的 HTML !!!
-//     console.log('--- RAW HTML FROM AXIOS (Goldman Sachs) ---');
-//     console.log(html.substring(0, 5000)); // 打印前 5000 个字符看看
+  try {
+    // **重要提醒**: 这里的 axios.get 获取的是初始HTML。如果内容是JS动态加载，此方法无效。
+    const { data: html } = await axios.get(url, { /* headers */ });
+    console.log(`UBS API: Successfully fetched HTML (length: ${html.length})`);
 
-//     const $ = cheerio.load(html);
-//     const items: NewsItem[] = [];
+    const $ = cheerio.load(html);
+    const items: NewsItem[] = [];
 
-//     const articleCards = $('a.gs-card[data-gs-uitk-component="card"][data-type="editorial"]');
-//     console.log(`Goldman Sachs API: Found ${articleCards.length} potential article cards.`);
+    // 更新主选择器，基于截图
+    const articleItems = $('li.sdactivitystream__listItem article.sdactivitystreamtile_tile');
 
-//     articleCards.each((index, element) => {
-//       const card = $(element);
+    console.log(`UBS API: Found ${articleItems.length} potential items using selector 'li article'.`);
 
-//       // --- 标题 ---
-//       const titleElement = card.find('div[data-gs-uitk-component="card-title"].card-title');
-//       let title = titleElement.text().trim();
+    if (articleItems.length === 0) {
+        console.warn("UBS API: No items found with 'li article' selector. Content might be loaded dynamically via API.");
+        // 在这里可以考虑尝试调用 API 作为后备方案，但这会增加复杂性
+    }
 
-//       // --- 图片 URL ---
-//       const imgElement = card.find('div[data-gs-uitk-component="image-container"] img.gs-image-container__image');
-//       let imageUrl = imgElement.attr('src');
-//       const imageAlt = imgElement.attr('alt');
+    articleItems.each((index, element) => {
+      const article = $(element);
 
-//       if (!title && imageAlt) {
-//         title = imageAlt.trim();
-//       }
+      let title = '';
+      let link = '';
 
-//       // --- 日期 ---
-//       const dateElement = card.find('div[data-gs-uitk-component="card-meta"] span[data-gs-uitk-component="text"]');
-//       let dateText = dateElement.text().trim();
+      // --- 获取标题和链接 (优先内容区的 H3 > A) ---
+      const titleLinkElement = article.find('div.sdactivitystreamtile_info h3.sdactivitystreamtile_hl a');
+      if (titleLinkElement.length > 0) {
+          title = titleLinkElement.text().trim();
+          link = titleLinkElement.attr('href') || '';
+      } else {
+          // 备选：如果内容区没链接，尝试图片区的链接，标题用图片alt
+          const imageLinkElement = article.find('div.sdactivitystreamtile_img a');
+          if (imageLinkElement.length > 0) {
+              link = imageLinkElement.attr('href') || '';
+              title = imageLinkElement.find('img').attr('alt')?.trim() || ''; // 可能为空alt
+          }
+      }
 
-//       // --- 摘要 (Eyebrow) ---
-//       const eyebrowElement = card.find('div[data-gs-uitk-component="card-eyebrow"]');
-//       let summary = eyebrowElement.text().trim(); // 使用 eyebrow 作为摘要
+      // --- 获取摘要 ---
+      const summary = article.find('div.sdactivitystreamtile_info p.sdactivitystreamtile_txt').text().trim();
 
+      // --- 获取日期 (需要确认选择器) ---
+      // 尝试之前的选择器，或者需要F12检查 ul.sdactivitystreamtile_meta
+      const dateElement = article.find('.sdactivitystreamtile__date time, time.sdactivitystreamtile__date, span.sdactivitystreamtile__date'); // 尝试多种可能
+      let dateText = dateElement.first().attr('datetime') || dateElement.first().text().trim();
+      // 如果还找不到，检查 meta 区域
+      if (!dateText) {
+          // const metaText = article.find('ul.sdactivitystreamtile_meta').text().trim();
+          // 这里需要更具体的逻辑来从 metaText 中提取日期
+      }
 
-//       // --- 生成链接 (根据标题) ---
-//       let link = '';
-//       if (title) {
-//         const slug = title
-//           .toLowerCase() // 转为小写
-//           .replace(/\s+/g, '-') // 空格替换为 -
-//           .replace(/'/g, '')    // 移除单引号
-//           .replace(/&/g, '')     // 移除 &
-//           .replace(/[?,.:;!]/g, '') // 移除常见标点 (根据需要添加更多)
-//           .replace(/-+/g, '-')   // 将多个连续的连字符替换为单个
-//           .replace(/^-+|-+$/g, ''); // 移除开头和结尾的连字符
-//         if (slug) {
-//           link = `${baseInsightsUrl}${slug}`;
-//         }
-//       }
+      // --- 获取图片 URL (优先 src) ---
+      const imgElement = article.find('div.sdactivitystreamtile_img img');
+      let imageUrl = imgElement.attr('src'); // 优先使用 src
+      if (!imageUrl && imgElement.length > 0) { // 如果 src 为空或不存在
+          const srcset = imgElement.attr('srcset');
+          if (srcset) { // 尝试 srcset 的第一个
+              imageUrl = srcset.split(',')[0].trim().split(' ')[0];
+          }
+      }
 
-//       // 尝试从 <a> 标签获取 href 作为备选 (如果生成链接的逻辑不完美)
-//       const cardHref = card.attr('href');
-//       if (!link && cardHref) {
-//           if (cardHref.startsWith('/')) {
-//               link = new URL(cardHref, new URL(url).origin).href;
-//           } else if (cardHref.startsWith('http')) {
-//               link = cardHref;
-//           }
-//           if (link) console.warn(`GS API Item ${index}: Used card's href as fallback link: ${link}`);
-//       }
-
-
-//       // PRE-PUSH 日志
-//       if (!title || !link || !imageUrl) {
-//         console.log(`Goldman Sachs API Item ${index} PRE-PUSH (DEBUG) ---`);
-//         console.log(`  Raw Title: "${title}"`);
-//         console.log(`  Generated Link: "${link}" (From card href: "${cardHref || 'N/A'}")`);
-//         console.log(`  Raw Date: "${dateText}"`);
-//         console.log(`  Raw Image Src: "${imageUrl}"`);
-//         console.log(`  Raw Summary (Eyebrow): "${summary}"`);
-//       }
-
-//       if (title && link) {
-//         // 图片 URL 绝对化 (之前的逻辑)
-//         if (imageUrl && !imageUrl.startsWith('http')) {
-//           try { imageUrl = new URL(imageUrl, new URL(url).origin).href; } catch (e) { console.error(`GS: Invalid image URL ${imageUrl}`); imageUrl = undefined;}
-//         } else if (imageUrl && imageUrl.startsWith('//')) {
-//           imageUrl = `https:${imageUrl}`;
-//         }
-
-//         // 日期解析 (之前的逻辑)
-//         let publishedDate = new Date().toISOString();
-//         if (dateText) {
-//           try {
-//             const parsed = new Date(dateText);
-//             if (!isNaN(parsed.getTime())) {
-//               publishedDate = parsed.toISOString();
-//             } else { /* console.warn */ }
-//           } catch (e) { /* console.warn */ }
-//         }
-
-//         const newsItem: NewsItem = {
-//           id: link,
-//           title,
-//           link,
-//           source: 'GoldmanSachs',
-//           publishedDate,
-//           summary: summary || undefined,
-//           imageUrl: imageUrl || undefined,
-//         };
-//         items.push(newsItem);
-//       } else {
-//         console.warn(`Goldman Sachs API: Skipping item at index ${index} due to missing title or generated link (Title: "${title}", GeneratedLink: "${link}")`);
-//       }
-//     });
-
-//     console.log(`Goldman Sachs API: Successfully parsed ${items.length} news items.`);
-//     return items;
-
-//   } catch (error: any) {
-//     console.error('Goldman Sachs API fetchGoldmanSachsNews FUNCTION ERROR:', error.message, error.stack);
-//     throw new Error(`Problem in fetchGoldmanSachsNews for Goldman Sachs: ${error.message}`);
-//   }
-// }
+      // --- 日志记录 ---
+      console.log(`UBS API Item ${index} PRE-PUSH ---`);
+      console.log(`  Raw Title: "${title}"`);
+      console.log(`  Raw Link: "${link}"`);
+      console.log(`  Raw Summary: "${summary}"`);
+      console.log(`  Raw Date: "${dateText}"`);
+      console.log(`  Raw Image Src: "${imageUrl}" (Img tag found: ${imgElement.length > 0})`);
 
 
+      if (title && link) {
+          // URL 绝对化 (UBS的链接和图片似乎已经是绝对路径了，但以防万一)
+          if (link && link.startsWith('/')) {
+            try { link = new URL(link, baseDomain).href; } catch (e) { /* handle error */ link = '#'; }
+          }
+          if (imageUrl && imageUrl.startsWith('/')) {
+            try { imageUrl = new URL(imageUrl, baseDomain).href; } catch (e) { /* handle error */ imageUrl = undefined; }
+          } else if (imageUrl && imageUrl.startsWith('//')) {
+            imageUrl = `https:${imageUrl}`;
+          }
+
+          // 日期解析 (保持之前的逻辑)
+          let publishedDate = new Date().toISOString();
+          if (dateText) {
+            try {
+              const parsed = new Date(dateText);
+              if (!isNaN(parsed.getTime())) {
+                publishedDate = parsed.toISOString();
+              } else { console.warn(`UBS API: Could not parse date: "${dateText}"`); }
+            } catch (e) { console.warn(`UBS API: Error parsing date: "${dateText}"`, e); }
+          }
+
+          const newsItem: NewsItem = {
+            id: link,
+            title,
+            link,
+            source: 'UBS',
+            publishedDate,
+            summary: summary || undefined,
+            imageUrl: imageUrl || undefined,
+          };
+          console.log(`  Final NewsItem imageUrl: "${newsItem.imageUrl}"`);
+          items.push(newsItem);
+      } else {
+        console.warn(`UBS API: Skipping item at index ${index} due to missing title or link (Title: "${title}", Link: "${link}")`);
+      }
+    });
+
+    console.log(`UBS API: Successfully parsed ${items.length} news items via HTML scraping.`);
+    return items;
+
+  } catch (error: any) {
+    // ... (错误处理) ...
+    console.error('UBS API fetchUbsNews FUNCTION ERROR (HTML Scraping):', error.message, error.stack);
+    throw new Error(`Problem in fetchUbsNews for UBS (HTML Scraping): ${error.message}`);
+  }
+}
+
+// ... (GET handler 保持不变，确保 case 'UBS': 调用 fetchUbsNews()) ...
 
 
 
@@ -582,20 +576,25 @@ export async function GET(request: NextRequest) {
     switch (source.toUpperCase()) {
       case 'RHG':
         // console.log("API Route: Routing to fetchRhgNews (Local Dev)");
-        // newsItems = await fetchRhgNews();// 暂停使用
+        newsItems = await fetchRhgNews();// 暂停使用
         break;
       // For other sources, you can call a mock function or implement their scrapers
       case 'REDDIT':
       case 'YOUTUBE':
       case 'NYT':
       case 'WSJ':
-      case 'S&P GLOBAL': // Assuming 'S&P Global' is the exact string from ALL_SOURCES
-        newsItems = await fetchOtherSourceNews(source);
-        break;
+      // case 'S&P GLOBAL': // Assuming 'S&P Global' is the exact string from ALL_SOURCES
+      //   newsItems = await fetchOtherSourceNews(source);
+      //   break;
       case 'MCKINSEY': // <--- 确保这个 case 存在并且拼写完全正确
         console.log("API Route: Routing to fetchMckinseyNews (Local Dev)");
         newsItems = await fetchMckinseyNews();
         break;
+
+      // case 'UBS':
+      //   console.log("API Route: Routing to fetchUbsNews (Local Dev)");
+      //   newsItems = await fetchUbsNews();//动态，不行
+      //   break;
 
       // case 'GS':
       //   console.log("API Route: Routing to fetchGoldmanSachsNews (Local Dev)");
