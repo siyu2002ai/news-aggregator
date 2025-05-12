@@ -1,6 +1,6 @@
 // src/app/api/news/route.ts  <-- 确保路径是这个，如果你的 app 目录在 src 下
 
-export const runtime = 'nodejs';
+export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
